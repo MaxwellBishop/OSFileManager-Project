@@ -1,0 +1,30 @@
+Plans for project:
+- Indexed Allocation
+- Data structures we'll use:
+  - Tree (for the directory tree)
+    - Index block points to each record, therefore index block will store a list of pointers
+    - There's one index block / file
+- Connecting the Index blocks together:
+  - We can just use a hashmap/table so we can look up the files by filename
+  - There will be ONE hashmap / directory
+  - We could even use a linked list to make it simple too idc
+
+- Printing as a tree:
+  - We'll print the tree based off the directory files, and their children
+  - Directory file is an Index block that stores address to hashmap (or linkedlist)
+
+- Example hiarchy in java (from chat):
+
+abstract class Node {
+    String name;
+    Directory parent; // key for hierarchy
+}
+
+class Directory extends Node {
+    Map<String, Node> children = new HashMap<>();
+}
+
+class FileNode extends Node {
+    int indexBlockPointer;
+    String fileName;
+}
