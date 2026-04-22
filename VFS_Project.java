@@ -257,8 +257,8 @@ class VirtualDisk{
 public class VFS_Project {
     public static void main(String[] args) {
         //This is where we will implement the CLI and the virtual disk
-        System.out.println("Hello!");
-        //This is a comment to test the commit for braylon
+        
+        
         //Im thinking we can use a switch and scanner
     }
 }
