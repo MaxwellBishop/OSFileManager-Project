@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Scanner;
 import java.util.TreeMap;
 
 
@@ -177,12 +178,78 @@ class Record{
         return recordAddress;
     }
 
+    public void setData(String newData) {
+        this.data = newData;
+    }
+
 }
 
 
 class VirtualDisk{
-    //What will be interacting with the class: Records
-    
+    //VirtualDisk will manage storage of records (allocate, free, read, write)
+
+    private ArrayList<Record> disk; //This will represent the virtual disk, and it will store the records
+
+    private ArrayList<Integer> freeBlocks; //Number of free blocks
+
+    public VirtualDisk(){
+        this.freeBlocks = new ArrayList<>();
+        for(int i = 0; i < 100; i++){
+            freeBlocks.add(i); //Initialize the free blocks with addresses 0-99
+        }
+    }
+
+    public void readRecord(int address){
+        //Find the record with the given address and print its data
+        for(Record record : disk){
+            if(record.getRecordAddress() == address){
+                System.out.println(record.getData());
+                return;
+            }
+        }
+        System.out.println("No such record with address: " + address);
+    }
+
+    public void addRecord(String data){
+        if(freeBlocks.size() == 0){
+            System.out.println("Disk is full! Remove some files to free up space.");
+            return;
+        }
+        int address = freeBlocks.remove(0); //Get the address of the first free block
+        Record record = new Record(address, data);
+        //add the record to the virtual disk
+        disk.add(record);
+    }
+
+    public void deleteRecord(int address){
+        //Find the record with the given address and remove it from the disk
+        for(Record record : disk){
+            if(record.getRecordAddress() == address){
+                disk.remove(record);
+                freeBlocks.add(address); //Add the address back to the free blocks (no need to sort imo)
+                return;
+            }
+        }
+        System.out.println("No such record with address: " + address);
+    }
+
+    public void writeRecord(int address, String newData){
+        //Find the record with the given address and update its data
+        for(Record record : disk){
+            if(record.getRecordAddress() == address){
+                record.setData(newData);
+                return;
+            }
+        }
+        System.out.println("No such record with address: " + address);
+    }
+
+    public void showStatus(){
+        System.out.println("Virtual Disk Status:");
+        System.out.println("Total Blocks: " + disk.size());
+        System.out.println("Free Blocks: " + freeBlocks.size());
+    }
+
 }
 
 
@@ -190,5 +257,7 @@ class VirtualDisk{
 public class VFS_Project {
     public static void main(String[] args) {
         //This is where we will implement the CLI and the virtual disk
+
+        //Im thinking we can use a switch and scanner
     }
 }
