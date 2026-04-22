@@ -133,7 +133,7 @@ class Directory extends Node{
 }
 
 class FileNode extends Node{
-    //FileNode is inside of Directory's HashMap, and it'll act as a index block
+    //FileNode is inside of Directory's TreeMap, and it'll act as a index block
     //Therefore FileNode will store a list of pointers (ints) representing the addresses of the records of the file
 
     int indexBlockNum;
