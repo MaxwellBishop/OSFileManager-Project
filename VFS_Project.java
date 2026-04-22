@@ -1,5 +1,4 @@
 import java.util.ArrayList;
-import java.util.Scanner;
 import java.util.TreeMap;
 
 
@@ -106,6 +105,7 @@ class Directory extends Node{
         return parent;
     }
 
+    //Not used (but might be useful for the CLI)
     public TreeMap<String, Node> getChildren(){
         return children;
     }
