@@ -1,5 +1,5 @@
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.TreeMap;
 
 
 /*
@@ -45,15 +45,26 @@ Directory
  └── Directory
       ├── FileNode
       └── Directory
+
+
+A cool idea of a better output:
+[D] root
+  [F] file1 (3 records)
+  [D] subdir
+    [F] file2 (5 records)
+
+I think including the records part would be cool!
     
 - Implement CLI commands to create, delete, open, read, and write files/directories in the file system
+
+- Implement a virtual disk to store the files and directories
 */
 
 
 
 //Node class is for building the tree
 
-public abstract class Node{
+abstract class Node{
     protected String name; //This will be the name of the node (filename or directory)
     protected Directory parent; //This will be the parent directory of this node
 
@@ -72,16 +83,51 @@ public abstract class Node{
     public Directory getParent(){
         return parent;
     }
+
+    public abstract void delete(); //This will be implemented in the subclasses, and it will delete the node and all of its children (if it's a directory)
 }
 
 class Directory extends Node{
 
-    private HashMap<String, Node> children = new HashMap<>();
+    private TreeMap<String, Node> children = new TreeMap<>(); //TreeMap gives you auto alphabetical ordering (and it won't be random unlike hashmap)
     //children will store either an indexblock (file) or another directory, and the key will be the name of the file/directory
 
-    public Directory(String name, Directory parent, HashMap<String, Node> children){
+    public Directory(String name, Directory parent){ 
         super(name, parent);
-        this.children = children;
+    }
+
+    public void addChild(Node child){ //Create directory or file
+        children.put(child.getName(), child);
+        child.parent = this; //Set the parent of the child to this directory
+    }
+
+    public Directory getParent(){
+        return parent;
+    }
+
+    public TreeMap<String, Node> getChildren(){
+        return children;
+    }
+
+    public void rmChild(String name){ //Delete directory or file
+        Node child = children.get(name);
+        if(child == null){
+            System.out.println("No such file or directory: " + name);
+            return;
+        }
+        child.delete(); //call it's delete method
+        children.remove(name); //Remove key from the TreeMap
+    }
+
+    public void delete(){
+        //Delete directory and all of its children
+        for(Node child : children.values()){
+            child.delete();
+        }
+        children.clear(); //Clear this directory's treemap
+
+        //We don't need to remove this directory from its parent, because the parent will handle that when it calls rmChild
+
     }
 }
 
@@ -89,12 +135,11 @@ class FileNode extends Node{
     //FileNode is inside of Directory's HashMap, and it'll act as a index block
     //Therefore FileNode will store a list of pointers (ints) representing the addresses of the records of the file
 
-    String fileName; int indexBlockNum;
+    int indexBlockNum;
     ArrayList<Integer> recordPointers; //This will store the pointers to the records of the file
 
-    public FileNode(String fileName, int indexBlockNum){
-        super(fileName, null); //FileNode doesn't technically have a parent because it's stored in the Directory's HashMap
-        this.fileName = fileName;
+    public FileNode(String fileName, int indexBlockNum, Directory parent){
+        super(fileName, parent);
         this.indexBlockNum = indexBlockNum;
         this.recordPointers = new ArrayList<>();
     }
@@ -103,18 +148,47 @@ class FileNode extends Node{
     public void addRecordPointer(int pointer){
         recordPointers.add(pointer);
     }
+
+    public void clearRecords(){
+        recordPointers.clear();
+    }
+
+    public void delete(){
+        clearRecords(); //Get rid of the recordpointers (which will free up the records in the virtual disk)
+    }
 }
 
 class Record{
     //Record stores the data of the file, and you can reference it using the index block in FileNode
 
-    String data;
-    int recordAddress; //This will be the address of the record in memory (or on disk)
+    private String data;
+    private int recordAddress; //This will be the address of the record in memory (or on disk)
 
-    public Record(String data){
+    public Record(int recordAddress, String data){
+        this.recordAddress = recordAddress;
         this.data = data;
     }
 
+    public String getData(){
+        return data;
+    }
+
+    public int getRecordAddress(){
+        return recordAddress;
+    }
+
+}
 
 
+class VirtualDisk{
+    //What will be interacting with the class: Records
+    
+}
+
+
+
+public class VFS_Project {
+    public static void main(String[] args) {
+        //This is where we will implement the CLI and the virtual disk
+    }
 }
