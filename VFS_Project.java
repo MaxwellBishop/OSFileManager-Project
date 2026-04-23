@@ -90,7 +90,7 @@ abstract class Node implements Serializable{
         return parent;
     }
 
-    public abstract void delete(); //This will be implemented in the subclasses, and it will delete the node and all of its children (if it's a directory)
+    public abstract void delete(FileSystem fs); //This will be implemented in the subclasses, and it will delete the node and all of its children (if it's a directory)
 }
 
 class Directory extends Node{
@@ -116,20 +116,20 @@ class Directory extends Node{
         return children;
     }
 
-    public void rmChild(String name){ //Delete directory or file
+    public void rmChild(String name, FileSystem fs){ //Delete directory or file
         Node child = children.get(name);
         if(child == null){
             System.out.println("No such file or directory: " + name);
             return;
         }
-        child.delete(); //call it's delete method
+        child.delete(fs); //call it's delete method
         children.remove(name); //Remove key from the TreeMap
     }
 
-    public void delete(){
+    public void delete(FileSystem fs){
         //Delete directory and all of its children
         for(Node child : children.values()){
-            child.delete();
+            child.delete(fs);
         }
         children.clear(); //Clear this directory's treemap
 
@@ -142,12 +142,17 @@ class FileNode extends Node{
     //FileNode is inside of Directory's TreeMap, and it'll act as a index block
     //Therefore FileNode will store a list of pointers (ints) representing the addresses of the records of the file
 
-    int indexBlockNum;
-    ArrayList<Integer> recordPointers; //This will store the pointers to the records of the file
+    //private int indexBlockNum;
+    private ArrayList<Integer> recordPointers; //This will store the pointers to the records of the file
 
-    public FileNode(String fileName, int indexBlockNum, Directory parent){
+    // public FileNode(String fileName, int indexBlockNum, Directory parent){
+    //     super(fileName, parent);
+    //     this.indexBlockNum = indexBlockNum;
+    //     this.recordPointers = new ArrayList<>();
+    // }
+
+    public FileNode(String fileName, Directory parent){
         super(fileName, parent);
-        this.indexBlockNum = indexBlockNum;
         this.recordPointers = new ArrayList<>();
     }
 
@@ -160,26 +165,33 @@ class FileNode extends Node{
         recordPointers.clear();
     }
 
-    public void delete(VirtualDisk disk){
+    public void delete(FileSystem fs){
         //Delete the records from the virtual disk
         for(int pointer : recordPointers){
-            disk.deleteRecord(pointer);
+            fs.getDisk().deleteRecord(pointer);
         }
-        delete(); //Delete the file node itself
-    }
-
-    public void delete(){
         clearRecords();
     }
 
-    public void addRecord(VirtualDisk disk, String data){
-        int recordAddress = disk.addRecord(data);
+    public void addRecord(FileSystem fs, String data){
+        int recordAddress = fs.getDisk().addRecord(data);
         if(recordAddress != -1){
             addRecordPointer(recordAddress);
         }
         else{
             System.out.println("Failed to add record to disk because it is full.");
         }
+    }
+
+    public void clearFileContent(FileSystem fs){
+        for(int pointer : recordPointers){
+            fs.getDisk().deleteRecord(pointer);
+        }
+        clearRecords();
+    }
+
+    public ArrayList<Integer> getRecordPointers(){
+        return recordPointers;
     }
 }
 
@@ -320,6 +332,10 @@ class FileSystem implements Serializable{ //Manages FS and makes it so we can sa
         return (Directory) root.getChildren().get("home");
     }
 
+    public VirtualDisk getDisk(){
+        return disk;
+    }
+
     public void save(String filename){
         //This will save the file system to a file using serialization
         try{
@@ -343,6 +359,11 @@ class FileSystem implements Serializable{ //Manages FS and makes it so we can sa
             fileIn.close();
             return fs;
         }
+        catch(java.io.FileNotFoundException e){
+            //Will do this the first time it runs
+            System.out.println("Building new file system...");
+            return null;
+        }
         catch(Exception e){
             e.printStackTrace();
             return null;
@@ -361,17 +382,15 @@ public class VFS_Project {
         System.out.println("rm \"filename\" - Delete a file or directory");
         System.out.println("open [\"filename\"] - Open file \"filename\" for reading/writing");
         System.out.println("read - Read contents from the currently opened file");
-        System.out.println("read [\"filename\"] - Reads contents of specified file");
-        System.out.println("write - Write data to the currently opened file");
-        System.out.println("write [\"filename\"]- Write to filename (will overwrite existing contents)");
+        System.out.println("write - Write data to the currently opened file (will override existing contents)");
         System.out.println("ls - List the contents of the current directory");
-        System.out.println("cd \"dirname\" - Change the current directory");
+        System.out.println("cd \"filepath\" - Change the current directory");
         System.out.println("mkdir \"dirname\" - Create a new directory");
         System.out.println("pwd - Print the current working directory");
         System.out.println("tree - Print the file system as a tree from the current directory");
         System.out.println("help - Show this help message");
         System.out.println("exit - Exit the program");
-        System.out.println(); System.out.println();
+        System.out.println();
     }
 
 
@@ -389,6 +408,7 @@ public class VFS_Project {
         for(int i = path.size() - 1; i >= 0; i--){
             System.out.print("/" + path.get(i)); //Print the path in reverse order (from home->cwd)
         }
+        System.out.println();
     }
 
     public static void printTree(Directory cwd){ //DFS traversal
@@ -408,14 +428,112 @@ public class VFS_Project {
             file1
         */
 
-        if(node instanceof Directory){}
+        String indent = "  ".repeat(depth); //.reapeat() repeats the string a # of times, which is based on current depth 
+        if(node instanceof Directory){
+            Directory dir = (Directory) node;
+            if(depth == 0){ //If this is the root directory, we won't print the |-- part, just the name of the directory
+                System.out.println(dir.getName());
+            }
+            else{
+                System.out.println(indent + "|-- " + dir.getName());
+            }
+            for(Node child : dir.getChildren().values()){
+                printTreeHelper(child, depth + 1); //Recursively print the children of this directory, and increase the depth by 1
+            }
+        }
 
         else if(node instanceof FileNode){
-            System.out.println(node.getName());
+            System.out.println(indent + "|-- " + node.getName());
             return;
         }
 
     }
+
+    public static Directory changeDir(String filepath, Directory cwd, FileSystem fs){
+        Directory current = null;
+
+        //Figure out starting point
+        if(filepath.startsWith("/")){ //absolute
+            current = fs.root;
+            filepath = filepath.substring(1); //Remove the leading "/" so we can split the path correctly
+        }
+        else{ //relative
+            current = cwd;
+        }
+
+        //Split the filepath into parts based on "/"
+        String[] parts = filepath.split("/");
+        for(String part : parts){
+            if(part.equals("") || part.equals(".")){
+                //skip because either empty or starting at cwd (relative path)
+                continue;
+            }
+            else if(part.equals("..")){
+                //move up to parent directory if possible and end function
+                if(current.getParent() != null){
+                    current = current.getParent();
+                    cwd = current; //Update the working directory to the new directory
+                    break;
+                }
+                else{
+                    System.out.println("Already at root directory, can't move up!");
+                    return cwd;
+                }
+            }
+            else{
+                //Check if part exists in current's children
+                if(current.getChildren().containsKey(part)){
+                    Node child = current.getChildren().get(part);
+                    if(child instanceof Directory){
+                        current = (Directory) child; //Move down to the child directory
+                        cwd = current; //Update the working directory to the new directory
+                    }
+                    else if(child instanceof FileNode){
+                        System.out.println(filepath + " is a file, not a directory!");
+                    }
+                    else{
+                        System.out.println("Error: invalid path");
+                    }
+                }
+                else{
+                    System.out.println("No such directory: " + filepath);
+                    return cwd;
+                }
+            }
+        }
+        return cwd;
+    }
+
+
+    // public static void rm(String filepath, String name, Directory cwd, FileSystem fs){
+    //     //Check if filepath is valid (absolute or relative)
+
+    //     Directory current = null;
+
+    //     if(filepath.startsWith("/")){ //absolute
+    //         current = fs.root;
+    //         filepath = filepath.substring(1); //Remove the leading "/" so we can split the path correctly
+    //     }
+    //     else{ //relative
+    //         current = cwd;
+    //     }
+
+    //     //logic to find the directory the file "name" is in
+    //     String[] parts = filepath.split("/");
+    //     for(String part : parts){
+    //         if(part.equals("") || part.equals(".")){
+    //             continue;
+    //         }
+    //         else if(part.equals("..")){
+    //             if(current.getParent()!=null){
+    //                 current = current.parent;
+    //             }
+    //         }
+
+    //     }
+
+    // }
+
 
     public static void main(String[] args) {
         //This is where we will implement the CLI and the virtual disk
@@ -454,6 +572,8 @@ public class VFS_Project {
 
         boolean running = true;
         Directory workingDirectory = fs.users.get(username).getHomeDirectory(); //initilize working directory to user's home directory
+        boolean fileOpen = false;
+        FileNode openFileNode = null; //needs to be a node so we can mess with the records
 
         do{
             
@@ -463,28 +583,169 @@ public class VFS_Project {
             switch(command){
                 case "help":
                     VFS_Project.helpCommand();
+                    System.out.println();
                     break;
 
                 case "pwd":
                     printAbsolutePath(workingDirectory);
+                    System.out.println();
                     break;
                 
                 case "tree":
                     printTree(workingDirectory);
+                    System.out.println();
+                    break;
+
+                case "ls":
+                    for(String name : workingDirectory.getChildren().keySet()){
+                        System.out.println("- " + name);
+                    }
+                    System.out.println();
+                    break;
+
+                case "touch":
+                    String filename = scan.next();
+                    if(workingDirectory.getChildren().containsKey(filename)){
+                        System.out.println("File or directory with name " + filename + " already exists!");
+                        System.out.println();
+                        break;
+                    }
+                    else{
+                        FileNode newFile = new FileNode(filename, workingDirectory);
+                        workingDirectory.addChild(newFile);
+                        System.out.println("File created: " + filename);
+                        System.out.println();
+                        break; 
+                    }
+
+                case "mkdir":
+                    String dirname = scan.next();
+                    if(workingDirectory.getChildren().containsKey(dirname)){
+                        System.out.println("Directory " + dirname + " already exists in this directory!");
+                        System.out.println();
+                        break;
+                    }
+                    else{
+                        Directory newDir = new Directory(dirname, workingDirectory);
+                        workingDirectory.addChild(newDir);
+                        System.out.println("Directory created: " + dirname);
+                        System.out.println();
+                        break;
+                    }
+
+                
+                case "cd":
+                    String filepath = scan.next();      
+                    Directory newDir = changeDir(filepath, workingDirectory, fs);
+                    if(newDir != null){
+                        workingDirectory = newDir;
+                    }
+                    System.out.println();
+                    break;
+
+                case "rm":
+                    String fileName = scan.next();
+                    //check if fileName is inside of cwd map
+                    if(workingDirectory.getChildren().containsKey(fileName)){
+                        workingDirectory.rmChild(fileName, fs);
+                    }
+                    else{
+                        System.out.println("File " + fileName + " is not in current directory");
+                    }
+                    System.out.println();
                     break;
 
 
+                case "open":
+                    fileName = scan.next();
+                    if(workingDirectory.getChildren().containsKey(fileName)){
+                        if(fileOpen == false){
+                            fileOpen = true;
+                            openFileNode = (FileNode) workingDirectory.getChildren().get(fileName);
+                            System.out.println("Opening file " + fileName);
+                        }
+                        else{
+                            System.out.println("File " + openFileNode.getName() + " is already open! Close it first");
+                        }
+                    }
+                    System.out.println();
+                    break;
 
+                case "read":
+                    if(fileOpen == false){
+                        System.out.println("No file open!");
+                        System.out.println();
+                        break;
+                    }
 
+                    //grab the pointers
+                    ArrayList<Integer> recordPointers = openFileNode.getRecordPointers();
 
+                    //use pointers to find record in fs/VD
+                    for(int pointer : recordPointers){
+                        String data = fs.getDisk().readRecord(pointer);
+                        if(data != null){
+                            System.out.println(data);
+                        }
+                    }
+                    System.out.println();
+                    break;
 
+                case "write":
+                    if(fileOpen == false){
+                        System.out.println("No file open!");
+                        System.out.println();
+                        break;
+                    }
                 
+                    System.out.println("Please write a line of data. The longer the line, the more storage it'll allocate:");
+                    scan.nextLine(); //just in case we have a leftover newline
+                    String userInput = scan.nextLine();
+                    
+                    //Delete old records (since we're overwriting), but don't call delete() because technically we don't want to delete the file itself
+                    openFileNode.clearFileContent(fs);
+
+                    String[] tokens = userInput.split(" ");
+                    int BLOCK_SIZE = 5; //5 tokens per record (idea from one Braylon's files)
+
+                    for(int i = 0; i < tokens.length; i += BLOCK_SIZE){
+                        //String data = tokens[i]+" "+tokens[i+1]+" "+tokens[i+2]+" "+tokens[i+3]+" "+tokens[i+4];
+
+                        StringBuilder sb = new StringBuilder();
+                        for(int v = i; v < i+BLOCK_SIZE && v <tokens.length; v++){
+                            sb.append(tokens[v]).append(" "); //add that space at the end of the token
+                        }
+                        String data = sb.toString().trim(); //get rid of the last trailing space w/ trim
+                        openFileNode.addRecord(fs, data);
+                    }
+
+                    System.out.println();
+                    break;
+                
+                case "close":
+                    if(fileOpen == false){
+                        System.out.println("No file is open!");
+                        System.out.println();
+                        break;
+                    }
+
+                    fileOpen = false;
+                    openFileNode = null;
+                    System.out.println();
+                    break;
+
+                case "status":
+                    fs.getDisk().showStatus();
+                    System.out.println();
+                    break;
 
                 case "exit":
+                    System.out.println("Saving work...");
                     running = false;
                     break;
                 default:
                     System.out.println("Invalid command. Type 'help' to see a list of commands.");
+                    System.out.println();
                     continue;
             }
 
