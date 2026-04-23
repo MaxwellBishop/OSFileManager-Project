@@ -378,13 +378,13 @@ public class VFS_Project {
     
     public static void helpCommand(){
         System.out.println("status - Show the status of the virtual disk");
-        System.out.println("touch \"filename\" - Create a new file");
+        System.out.println("touch \"filename\" - Create a new file (has to be in cwd)");
         System.out.println("rm \"filename\" - Delete a file or directory");
         System.out.println("open [\"filename\"] - Open file \"filename\" for reading/writing");
         System.out.println("read - Read contents from the currently opened file");
         System.out.println("write - Write data to the currently opened file (will override existing contents)");
         System.out.println("ls - List the contents of the current directory");
-        System.out.println("cd \"filepath\" - Change the current directory");
+        System.out.println("cd \"filepath\" - Change the current directory (relative or absolute)");
         System.out.println("mkdir \"dirname\" - Create a new directory");
         System.out.println("pwd - Print the current working directory");
         System.out.println("tree - Print the file system as a tree from the current directory");
@@ -698,7 +698,7 @@ public class VFS_Project {
                         break;
                     }
                 
-                    System.out.println("Please write a line of data. The longer the line, the more storage it'll allocate:");
+                    System.out.println("Please write a line of data. The more tokens you write, the more storage it'll allocate:");
                     scan.nextLine(); //just in case we have a leftover newline
                     String userInput = scan.nextLine();
                     
