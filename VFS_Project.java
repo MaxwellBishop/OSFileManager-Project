@@ -1,4 +1,7 @@
+import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.Scanner;
 
@@ -65,12 +68,14 @@ I think including the records part would be cool!
 
 //Node class is for building the tree
 
-abstract class Node{
+abstract class Node implements Serializable{
     protected String name; //This will be the name of the node (filename or directory)
     protected Directory parent; //This will be the parent directory of this node
 
     //Protected because we don't want to allow direct access to these variables, 
     //but we want to allow access in the subclasses (Directory and FileNode)
+
+    //Add permissions (if there's time)
 
     public Node(String name, Directory parent){
         this.name = name;
@@ -155,12 +160,30 @@ class FileNode extends Node{
         recordPointers.clear();
     }
 
+    public void delete(VirtualDisk disk){
+        //Delete the records from the virtual disk
+        for(int pointer : recordPointers){
+            disk.deleteRecord(pointer);
+        }
+        delete(); //Delete the file node itself
+    }
+
     public void delete(){
-        clearRecords(); //Get rid of the recordpointers (which will free up the records in the virtual disk)
+        clearRecords();
+    }
+
+    public void addRecord(VirtualDisk disk, String data){
+        int recordAddress = disk.addRecord(data);
+        if(recordAddress != -1){
+            addRecordPointer(recordAddress);
+        }
+        else{
+            System.out.println("Failed to add record to disk because it is full.");
+        }
     }
 }
 
-class Record{
+class Record implements Serializable{
     //Record stores the data of the file, and you can reference it using the index block in FileNode
 
     private String data;
@@ -183,13 +206,17 @@ class Record{
         this.data = newData;
     }
 
+    public Record getRecord(){
+        return this;
+    }
+
 }
 
 
-class VirtualDisk{
+class VirtualDisk implements Serializable{
     //VirtualDisk will manage storage of records (allocate, free, read, write)
 
-    private ArrayList<Record> disk; //This will represent the virtual disk, and it will store the records
+    private Map<Integer, Record> disk = new HashMap<>(); //This will represent the virtual disk, and it will store the records
 
     private ArrayList<Integer> freeBlocks; //Number of free blocks
 
@@ -200,48 +227,46 @@ class VirtualDisk{
         }
     }
 
-    public void readRecord(int address){
-        //Find the record with the given address and print its data
-        for(Record record : disk){
-            if(record.getRecordAddress() == address){
-                System.out.println(record.getData());
-                return;
-            }
+    public String readRecord(int address){
+        Record record = disk.get(address);
+
+        if(record == null){
+            System.out.println("No record found at address: " + address);
+            return null;
         }
-        System.out.println("No such record with address: " + address);
+        return record.getData();
     }
 
-    public void addRecord(String data){
+    public int addRecord(String data){
         if(freeBlocks.size() == 0){
             System.out.println("Disk is full! Remove some files to free up space.");
-            return;
+            return -1;
         }
         int address = freeBlocks.remove(0); //Get the address of the first free block
         Record record = new Record(address, data);
         //add the record to the virtual disk
-        disk.add(record);
+        disk.put(address, record);
+        return address;
     }
 
     public void deleteRecord(int address){
         //Find the record with the given address and remove it from the disk
-        for(Record record : disk){
-            if(record.getRecordAddress() == address){
-                disk.remove(record);
-                freeBlocks.add(address); //Add the address back to the free blocks (no need to sort imo)
-                return;
-            }
+        if(disk.containsKey(address)){
+            disk.remove(address);
+            freeBlocks.add(address); //Add the address back to the free blocks
+            return;
         }
         System.out.println("No such record with address: " + address);
     }
 
     public void writeRecord(int address, String newData){
         //Find the record with the given address and update its data
-        for(Record record : disk){
-            if(record.getRecordAddress() == address){
-                record.setData(newData);
-                return;
-            }
+        if(disk.containsKey(address)){
+            Record record = disk.get(address);
+            record.setData(newData);
+            return;
         }
+        
         System.out.println("No such record with address: " + address);
     }
 
@@ -254,144 +279,220 @@ class VirtualDisk{
 }
 
 
+class User implements Serializable{
+
+    private String username;
+    private Directory homeDirectory;
+
+    public User(String username, Directory homeDirectory){
+        this.username = username;
+        this.homeDirectory = homeDirectory;
+    }
+
+    public String getUsername(){
+        return username;
+    }
+
+    public Directory getHomeDirectory(){
+        return homeDirectory;
+    } 
+    
+
+}
+
+
+class FileSystem implements Serializable{ //Manages FS and makes it so we can save the info so VFS doesn't get wiped every time we run the program 
+    Directory root;
+    VirtualDisk disk;
+    Map<String, User> users; //This will store the users of the file system, and the key will be the username
+
+    public FileSystem(){
+        this.root = new Directory("root", null); //Root directory has no parent
+        this.disk = new VirtualDisk();
+        this.users = new HashMap<>();
+
+        //Add the /home directory to root
+        Directory home = new Directory("home", root);
+        root.addChild(home);
+    }
+
+    public Directory getHomeDir(){
+        return (Directory) root.getChildren().get("home");
+    }
+
+    public void save(String filename){
+        //This will save the file system to a file using serialization
+        try{
+            java.io.FileOutputStream fileOut = new java.io.FileOutputStream(filename);
+            java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(fileOut);
+            out.writeObject(this);
+            out.close();
+            fileOut.close();
+            //System.out.println("File system saved to " + filename);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static FileSystem load(String filename){
+        try{
+            java.io.FileInputStream fileIn = new java.io.FileInputStream(filename);
+            java.io.ObjectInputStream in = new java.io.ObjectInputStream(fileIn);
+            FileSystem fs = (FileSystem) in.readObject();
+            in.close();
+            fileIn.close();
+            return fs;
+        }
+        catch(Exception e){
+            e.printStackTrace();
+            return null;
+        }
+    }
+}
+
+
+
 
 public class VFS_Project {
+    
+    public static void helpCommand(){
+        System.out.println("status - Show the status of the virtual disk");
+        System.out.println("touch \"filename\" - Create a new file");
+        System.out.println("rm \"filename\" - Delete a file or directory");
+        System.out.println("open [\"filename\"] - Open file \"filename\" for reading/writing");
+        System.out.println("read - Read contents from the currently opened file");
+        System.out.println("read [\"filename\"] - Reads contents of specified file");
+        System.out.println("write - Write data to the currently opened file");
+        System.out.println("write [\"filename\"]- Write to filename (will overwrite existing contents)");
+        System.out.println("ls - List the contents of the current directory");
+        System.out.println("cd \"dirname\" - Change the current directory");
+        System.out.println("mkdir \"dirname\" - Create a new directory");
+        System.out.println("pwd - Print the current working directory");
+        System.out.println("tree - Print the file system as a tree from the current directory");
+        System.out.println("help - Show this help message");
+        System.out.println("exit - Exit the program");
+        System.out.println(); System.out.println();
+    }
+
+
+    public static void printAbsolutePath(Directory cwd){
+        ArrayList<String> path = new ArrayList<>();
+        Directory current = cwd;
+
+        //Traverse up the directory tree until we reach the root, adding each directory name to the path list
+
+        while(current != null){
+            path.add(current.getName()); //Add the directory name to arraylist
+            current = current.getParent(); //Move up to the parent directory
+        }
+
+        for(int i = path.size() - 1; i >= 0; i--){
+            System.out.print("/" + path.get(i)); //Print the path in reverse order (from home->cwd)
+        }
+    }
+
+    public static void printTree(Directory cwd){ //DFS traversal
+        printTreeHelper(cwd, 0);
+    }
+
+    public static void printTreeHelper(Node node, int depth){
+        /*Example output: (dir1 is cwd)
+            dir1
+            |-- file1
+            |-- file2
+            |-- dir2
+                |-- file3
+        */
+
+        /*Example output 2:
+            file1
+        */
+
+        if(node instanceof Directory){}
+
+        else if(node instanceof FileNode){
+            System.out.println(node.getName());
+            return;
+        }
+
+    }
+
     public static void main(String[] args) {
         //This is where we will implement the CLI and the virtual disk
-      Scanner scan = new Scanner(System.in);
-      String command;
-      String newName;
-      String content;
-      //String openFile;  //may want to change the openFile to its own object type?
-      File openFile = null;
-      String directory = "root";  //again, change to its own object type
-      
-      boolean enderMan = true;
-      
-      while(enderMan!=false){
-      
-      System.out.print("EliteHacker9/18/47--> ");
-      command = scan.next();
-      
-      switch(command)
-         {
-            case "create": //create new file
-            {
-             boolean chekcer = false;
-             System.out.print("Enter file name: ");//name new file
-             newName = scan.next();
-               try {
-                     FileWriter myWriter = new FileWriter(newName);
-                     scan.nextLine();
-                     System.out.print("File contents: "); //write to the new file
-                     content = scan.nextLine();
-                     myWriter.write(content);
-                     chekcer = true;
-                     myWriter.close();
-                   } catch (IOException e) {
-                     e.printStackTrace();
-               }
-               if(chekcer==true){
-                  System.out.println("File Created");//execute once created
-               }
-            }
-            break;
-            case "delete": //delete
-            {
-               
-               System.out.println("File deleted");
-               
-            }
-            break;
-            case "close": //close
-            {
-               
-               openFile = null;
-               System.out.println("File closed");
-               
-            }
-            break;
-            case "open": //open
-            {
-               System.out.print("Select a file: ");
-               newName = scan.next();
-               
-               File temp = new File(newName);
-               if(temp.exists()){
-                  openFile = temp; //set which file is opened
-                  System.out.println(newName+" Opened");
-               }
-               else{
-                  System.out.println("File does not exist!");
-               }
-            }
-            break;
-            case "read": //read
-            {
-               if(openFile!=null){
-                  try{
-                     Scanner reader = new Scanner(openFile);
-                     while (reader.hasNextLine()) {
-                         System.out.println(reader.nextLine()); //print out the file for user to read
-                     }
-                     reader.close();
-                  }catch (IOException e) {
-                        System.out.println("File not found.");
-                  }
-               }
-               else
-               {
-                  System.out.println("No file opened!");
-               }
-               
-               //System.out.println("File Read");
+        //Implemented code from Experiemental.java
 
-            }
-            break;
-            case "write": //write
-            {
-               if(openFile!=null){
-                  try {
-                        /*System.out.print("Name of file: ");
-                        scan.nextLine();
-                        newName = scan.nextLine();*/
-                        FileWriter myWriter = new FileWriter(openFile, true);
-                        scan.nextLine();
-                        System.out.print("File contents: "); //write to the new file
-                        content = scan.nextLine();
-                        myWriter.write(content);
-                        myWriter.close();
-                      } catch (IOException e) {
-                        e.printStackTrace();
-                  }
-                  System.out.println("Wrote to File");
-               }
-               else
-               {
-                  System.out.println("No file open D:<");
-               }
-            }
-            break;
-            case "shutdown": //shutdown
-            {
-               System.out.println("Shutting Down >:)");
-               enderMan = false;
-            }
-            break;
-            case "cd": //change directory
-            {
-               System.out.println("change directory to: ");
-               
-            }
-            break;
-            default:
-            {
-               System.out.println("No such command exists");
-            }
+        //See if the file system already exists, if it does, load it, if it doesn't, create a new one
+        FileSystem fs;
+        try{
+            fs = FileSystem.load("filesystem.ser");
+        }
+        catch(Exception e){
+            fs = null;
+        }
+        if(fs == null){
+            fs = new FileSystem();
+        }
+
+        
+        //Initial setup:
+
+        Scanner scan = new Scanner(System.in);
+        String username;
+        System.out.print("Enter your username: ");
+        username = scan.next();
+
+        //If username doesn't exist, create a new user with a root directory
+        if(!fs.users.containsKey(username)){
+            Directory homeDir = new Directory(username, fs.getHomeDir());
+            fs.getHomeDir().addChild(homeDir); //add it to the treemap (the big one we'll print as a tree)
+            User newUser = new User(username, homeDir);
+            fs.users.put(username, newUser);
+        }
+
+        System.out.println("Welcome to the Virtual File System " + username + "!\n");
+        System.out.println("Type 'help' to see a list of commands.\n");
+
+        boolean running = true;
+        Directory workingDirectory = fs.users.get(username).getHomeDirectory(); //initilize working directory to user's home directory
+
+        do{
             
-         }
-         
-         }//while loop end
-         
+            System.out.print(workingDirectory.getName() + ": ");
+            String command = scan.next();
+
+            switch(command){
+                case "help":
+                    VFS_Project.helpCommand();
+                    break;
+
+                case "pwd":
+                    printAbsolutePath(workingDirectory);
+                    break;
+                
+                case "tree":
+                    printTree(workingDirectory);
+                    break;
+
+
+
+
+
+
+                
+
+                case "exit":
+                    running = false;
+                    break;
+                default:
+                    System.out.println("Invalid command. Type 'help' to see a list of commands.");
+                    continue;
+            }
+
+        } while(running);
+
+        scan.close();
+        //save the file system before exiting
+        fs.save("filesystem.ser");
     }
+
 }
