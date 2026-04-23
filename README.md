@@ -11,9 +11,9 @@ FileSystem that uses Serializable from java.io to save the tree and user structu
 
 # Getting started:
 
-Have java installed on your system (version 24 or higher)
-Download and open VFS_Project.java on your system
-Run the main function in the java file
+- Have java installed on your system (version 24 or higher)
+- checkout the repo `bash git@github.com:MaxwellBishop/OSFileManager-Project.git ` or download and open VFS_Project.java on your system
+- Run the main function in the java file
 
 
 # Extra notes:
